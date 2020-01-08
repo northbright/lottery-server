@@ -195,6 +195,8 @@ func getWinners(ctx context.Context, c *Client, a Action, mutex *sync.Mutex) {
 		select {
 		case <-ctx.Done():
 			fmt.Printf("ctx.Done() in getWinners\n")
+			// Modify action name when cancel() is called("stop" action received)
+			a.Name = "stop"
 			return
 		default:
 		}
