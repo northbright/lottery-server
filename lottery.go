@@ -56,12 +56,12 @@ type CommonResponse struct {
 	Action  `json:"action"`
 }
 
-type GetPrizesResponse struct {
+type PrizesResponse struct {
 	CommonResponse
 	Prizes []Prize `json:"prizes"`
 }
 
-type StartStopResponse struct {
+type WinnersResponse struct {
 	CommonResponse
 	Winners []Participant `json:"winners"`
 }
@@ -133,6 +133,12 @@ func processAction(c *Client, message []byte) {
 		if err = getPrizes(c, action); err != nil {
 			fmt.Printf("getPrizes() error: %v\n", err)
 		}
+
+	case "get_winners":
+		if err = getWinners(c, action, mutex); err != nil {
+			fmt.Printf("getWinners() error: %v\n", err)
+		}
+
 	case "start":
 		if _, ok := cancelMap[action.PrizeIndex]; ok {
 			break
@@ -140,7 +146,7 @@ func processAction(c *Client, message []byte) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancelMap[action.PrizeIndex] = cancel
 		ctxMap[action.PrizeIndex] = ctx
-		go getWinners(ctx, c, action, mutex)
+		go start(ctx, c, action, mutex)
 
 	case "stop":
 		fmt.Printf("stop")
@@ -159,7 +165,7 @@ func processAction(c *Client, message []byte) {
 
 func getPrizes(c *Client, a Action) error {
 	commonRes := CommonResponse{Success: true, ErrMsg: "", Action: a}
-	res := GetPrizesResponse{commonRes, config.Prizes}
+	res := PrizesResponse{commonRes, config.Prizes}
 
 	buf, err := json.Marshal(res)
 	if err != nil {
@@ -169,11 +175,32 @@ func getPrizes(c *Client, a Action) error {
 	return nil
 }
 
-func getWinners(ctx context.Context, c *Client, a Action, mutex *sync.Mutex) {
+func getWinners(c *Client, a Action, mutex *sync.Mutex) error {
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	commonRes := CommonResponse{Success: true, ErrMsg: "", Action: a}
+
+	winners := []Participant{}
+	if _, ok := winnerMap[a.PrizeIndex]; ok {
+		winners = winnerMap[a.PrizeIndex]
+	}
+
+	res := WinnersResponse{commonRes, winners}
+
+	buf, err := json.Marshal(res)
+	if err != nil {
+		return err
+	}
+	c.send <- buf
+	return nil
+}
+
+func start(ctx context.Context, c *Client, a Action, mutex *sync.Mutex) {
 	var (
 		err     error
 		errMsg  = ""
-		winners []Participant
+		winners = []Participant{}
 	)
 
 	mutex.Lock()
@@ -185,7 +212,7 @@ func getWinners(ctx context.Context, c *Client, a Action, mutex *sync.Mutex) {
 			commonRes.Success = true
 		}
 
-		res := StartStopResponse{commonRes, winners}
+		res := WinnersResponse{commonRes, winners}
 		if err = sendResponse(c, res); err != nil {
 			fmt.Printf("sendResponse() err: %v\n", err)
 		}
@@ -233,7 +260,7 @@ func getWinners(ctx context.Context, c *Client, a Action, mutex *sync.Mutex) {
 		}
 
 		commonRes := CommonResponse{Success: true, ErrMsg: errMsg, Action: a}
-		res := StartStopResponse{commonRes, winners}
+		res := WinnersResponse{commonRes, winners}
 
 		if err = sendResponse(c, res); err != nil {
 			fmt.Printf("sendResponse() err: %v\n", err)
