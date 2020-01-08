@@ -191,6 +191,17 @@ func getWinners(ctx context.Context, c *Client, a Action, mutex *sync.Mutex) {
 		}
 	}()
 
+	// Check if there're already winners for current prize,
+	// if so, re-get winners.
+	oldWinners, ok := winnerMap[a.PrizeIndex]
+	if ok {
+		// Return old winners to available participants.
+		availParticipants = append(availParticipants, winnerMap[a.PrizeIndex]...)
+		fmt.Printf("return old winners to availParticipants\n")
+		fmt.Printf("return winners: %v\n", oldWinners)
+		fmt.Printf("after return winners, availParticipants: %v\n", availParticipants)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -202,17 +213,13 @@ func getWinners(ctx context.Context, c *Client, a Action, mutex *sync.Mutex) {
 			winnerMap[a.PrizeIndex] = winners
 
 			// Remove winners from available participants.
+			availParticipants = removeWinners(availParticipants, winners)
+
+			fmt.Printf("winners: %v\n", winners)
+			fmt.Printf("after remove winners, availParticipants: %v\n", availParticipants)
 			return
 		default:
 		}
-
-		// Check if there're already winners for current prize,
-		// if so, re-get winners.
-		/*	oldWinners, ok := winnerMap[a.PrizeIndex]
-			if ok {
-				// Return old winners to available participants.
-				availParticipants = append(availParticipants, winnerMap[a.PrizeIndex]...)
-			}*/
 
 		if winners, err = _getWinners(
 			config.Prizes,
@@ -321,10 +328,6 @@ func _getWinners(prizes []Prize, prizeIndex int, availables []Participant, black
 	m = len(updatedAvailables)
 	if m <= 0 {
 		return []Participant{}, fmt.Errorf("no participants for prize index: %v\n", prizeIndex)
-	}
-
-	for i, p := range updatedAvailables {
-		fmt.Printf("%v ID: %s, Name: %s\n", i, p.ID, p.Name)
 	}
 
 	// Set current prize num to m(number of participants),
