@@ -157,6 +157,18 @@ func processAction(c *Client, message []byte) {
 	}
 }
 
+func getPrizes(c *Client, a Action) error {
+	commonRes := CommonResponse{Success: true, ErrMsg: "", Action: a}
+	res := GetPrizesResponse{commonRes, config.Prizes}
+
+	buf, err := json.Marshal(res)
+	if err != nil {
+		return err
+	}
+	c.send <- buf
+	return nil
+}
+
 func getWinners(ctx context.Context, c *Client, a Action, mutex *sync.Mutex) {
 	var (
 		err     error
@@ -207,18 +219,6 @@ func getWinners(ctx context.Context, c *Client, a Action, mutex *sync.Mutex) {
 
 		time.Sleep(time.Millisecond * 100)
 	}
-}
-
-func getPrizes(c *Client, a Action) error {
-	commonRes := CommonResponse{Success: true, ErrMsg: "", Action: a}
-	res := GetPrizesResponse{commonRes, config.Prizes}
-
-	buf, err := json.Marshal(res)
-	if err != nil {
-		return err
-	}
-	c.send <- buf
-	return nil
 }
 
 func getAvailParticipantsForPrize(prizeIndex int, origin []Participant, blacklists []Blacklist) ([]Participant, error) {
