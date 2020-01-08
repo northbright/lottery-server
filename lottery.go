@@ -391,3 +391,32 @@ func verifyWinners(winners []Participant) bool {
 	}
 	return true
 }
+
+func round(prizeNum int, availables []Participant) ([]Participant, error) {
+	winners := []Participant{}
+
+	if prizeNum <= 0 {
+		return winners, fmt.Errorf("incorrect prize number")
+	}
+
+	m := len(availables)
+	if m <= 0 {
+		return winners, fmt.Errorf("no participants")
+	}
+
+	// Set prize num to m(number of participants),
+	// if number of participants is less than prize num:-).
+	if m < prizeNum {
+		prizeNum = m
+	}
+
+	for i := 0; i < prizeNum; i++ {
+		rand.Seed(time.Now().UnixNano())
+		idx := rand.Intn(len(availables))
+		winners = append(winners, availables[idx])
+		// Update participants
+		availables = append(availables[0:idx], availables[idx+1:]...)
+	}
+
+	return winners, nil
+}
