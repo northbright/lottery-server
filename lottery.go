@@ -230,8 +230,9 @@ func getAvailParticipantsForPrize(prizeIndex int, origin []Participant, blacklis
 		return origin, nil
 	}
 
-	updated := origin
-	for i, p := range updated {
+	var updated []Participant
+	for _, p := range origin {
+		found := false
 		for _, blacklist := range blacklists {
 			// blacklist is not for current prize index
 			if prizeIndex <= blacklist.MaxPrizeIndex {
@@ -239,9 +240,12 @@ func getAvailParticipantsForPrize(prizeIndex int, origin []Participant, blacklis
 			}
 			for _, ID := range blacklist.IDs {
 				if p.ID == ID {
-					updated = append(updated[:i], updated[i+1:]...)
+					found = true
 				}
 			}
+		}
+		if !found {
+			updated = append(updated, p)
 		}
 	}
 	return updated, nil
@@ -268,22 +272,49 @@ func _getWinners(prizes []Prize, prizeIndex int, availables []Participant, black
 		return []Participant{}, fmt.Errorf("no participants")
 	}
 
+	// Remove blacklists to update available participants
 	updatedAvailables, err := getAvailParticipantsForPrize(prizeIndex, availables, blacklists)
 	if err != nil {
 		return []Participant{}, fmt.Errorf("failed to get available participants for prize index: %v\n", prizeIndex)
 	}
 
+	// Check number of available participants
 	m = len(updatedAvailables)
 	if m <= 0 {
 		return []Participant{}, fmt.Errorf("no participants for prize index: %v\n", prizeIndex)
 	}
 
+	// Set current prize num to m(number of participants),
+	// if number of participants is less than prize num:-)
+	if m < n {
+		n = m
+	}
+
 	var winners []Participant
 	for i := 0; i < n; i++ {
 		rand.Seed(time.Now().UnixNano())
-		index := rand.Intn(m)
-		winners = append(winners, updatedAvailables[index])
+		idx := rand.Intn(len(updatedAvailables))
+		winners = append(winners, updatedAvailables[idx])
+		// Update participants
+		updatedAvailables = append(updatedAvailables[0:idx], updatedAvailables[idx+1:]...)
 	}
 
+	// Verify if there are duplicated winners
+	valid := verifyWinners(winners)
+	if !valid {
+		return []Participant{}, fmt.Errorf("invalid winners: %v", winners)
+	}
 	return winners, nil
+}
+
+func verifyWinners(winners []Participant) bool {
+	m := map[string]Participant{}
+
+	for _, p := range winners {
+		if _, ok := m[p.ID]; ok {
+			return false
+		}
+		m[p.ID] = p
+	}
+	return true
 }
