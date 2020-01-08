@@ -248,7 +248,19 @@ func start(ctx context.Context, c *Client, a Action, mutex *sync.Mutex) {
 		default:
 		}
 
-		if winners, err = _getWinners(
+		/*
+			if winners, err = _getWinners(
+				config.Prizes,
+				a.PrizeIndex,
+				availParticipants,
+				config.Blacklists,
+			); err != nil {
+				errMsg = fmt.Sprintf("_getWinners() error: %v", err)
+				fmt.Println(errMsg)
+				return
+			}*/
+
+		if winners, err = lottery(
 			config.Prizes,
 			a.PrizeIndex,
 			availParticipants,
@@ -419,4 +431,78 @@ func round(prizeNum int, availables []Participant) ([]Participant, error) {
 	}
 
 	return winners, nil
+}
+
+func getBlacklistIDs(blacklists []Blacklist, prizeIndex int) map[string]string {
+	m := map[string]string{}
+
+	if len(blacklists) <= 0 {
+		return m
+	}
+
+	for _, blacklist := range blacklists {
+		// Prizes are sorted by level(DESC order).
+		// Blacklist.MaxPrizeIndex means:
+		// the participants can not participate the lottery which prize index > MaxPrizeIndex.
+		// e.g.
+		// "prizes": [ {"name":"3rd prize", "num": 10}, {"name":"2nd prize", "num": 5}, {"name":"1st prize", "num": 1} ]
+		// "blacklists": [ {"max_prize_index":1, "ids": "0"} ]
+		// participants csv:
+		// 1,Frank
+		// 2,Bob
+		// 3,Tom
+		// ......
+		// It means "Frank" and "Bob" can only paticipate "3rd prize"(index = 0) and "2nd prize"(index = 1).
+		if prizeIndex <= blacklist.MaxPrizeIndex {
+			continue
+		}
+
+		for _, ID := range blacklist.IDs {
+			m[ID] = ID
+		}
+	}
+
+	return m
+}
+
+func removeBlacklist(origin []Participant, blacklist map[string]string) []Participant {
+	updated := []Participant{}
+
+	for _, p := range origin {
+		found := false
+		for ID, _ := range blacklist {
+			if p.ID == ID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			updated = append(updated, p)
+		}
+	}
+	return updated
+}
+
+func lottery(prizes []Prize, prizeIndex int, availables []Participant, blacklists []Blacklist) ([]Participant, error) {
+	if len(prizes) <= 0 {
+		return []Participant{}, fmt.Errorf("no prizes")
+	}
+
+	if prizeIndex < 0 || prizeIndex >= len(prizes) {
+		return []Participant{}, fmt.Errorf("prize index error")
+	}
+
+	prizeNum := prizes[prizeIndex].Num
+	if prizeNum <= 0 {
+		return []Participant{}, fmt.Errorf("no prizes for prize index: %v\n", prizeIndex)
+	}
+
+	blacklistIDs := getBlacklistIDs(blacklists, prizeIndex)
+	updatedAvailables := removeBlacklist(availables, blacklistIDs)
+
+	if len(updatedAvailables) <= 0 {
+		return []Participant{}, fmt.Errorf("no available participants")
+	}
+
+	return round(prizeNum, updatedAvailables)
 }
