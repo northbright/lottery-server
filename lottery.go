@@ -20,7 +20,7 @@ var (
 	config            Config
 	participants      []Participant
 	availParticipants []Participant
-	winners           = map[int][]Participant{}
+	winnerMap         = map[int][]Participant{}
 	cancelMap         = map[int]context.CancelFunc{}
 	ctxMap            = map[int]context.Context{}
 )
@@ -90,7 +90,7 @@ func loadConfig(file string, config *Config) error {
 	currentDir, _ := pathhelper.GetCurrentExecDir()
 	file = path.Join(currentDir, file)
 
-	// Load Conifg
+	// Load Conifg.
 	buf, err := ioutil.ReadFile(file)
 	if err != nil {
 		return err
@@ -195,11 +195,24 @@ func getWinners(ctx context.Context, c *Client, a Action, mutex *sync.Mutex) {
 		select {
 		case <-ctx.Done():
 			fmt.Printf("ctx.Done() in getWinners\n")
-			// Modify action name when cancel() is called("stop" action received)
+			// Modify action name when cancel() is called("stop" action received).
 			a.Name = "stop"
+
+			// Update winner map.
+			winnerMap[a.PrizeIndex] = winners
+
+			// Remove winners from available participants.
 			return
 		default:
 		}
+
+		// Check if there're already winners for current prize,
+		// if so, re-get winners.
+		/*	oldWinners, ok := winnerMap[a.PrizeIndex]
+			if ok {
+				// Return old winners to available participants.
+				availParticipants = append(availParticipants, winnerMap[a.PrizeIndex]...)
+			}*/
 
 		if winners, err = _getWinners(
 			config.Prizes,
@@ -223,6 +236,26 @@ func getWinners(ctx context.Context, c *Client, a Action, mutex *sync.Mutex) {
 	}
 }
 
+func removeWinners(origin []Participant, winners []Participant) []Participant {
+	var updated []Participant
+	for _, p := range origin {
+		found := false
+
+		for _, w := range winners {
+			if p.ID == w.ID {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			updated = append(updated, p)
+		}
+	}
+
+	return updated
+}
+
 func getAvailParticipantsForPrize(prizeIndex int, origin []Participant, blacklists []Blacklist) ([]Participant, error) {
 	if len(origin) <= 0 {
 		return origin, nil
@@ -236,14 +269,18 @@ func getAvailParticipantsForPrize(prizeIndex int, origin []Participant, blacklis
 	for _, p := range origin {
 		found := false
 		for _, blacklist := range blacklists {
-			// blacklist is not for current prize index
+			// Blacklist is not for current prize index.
 			if prizeIndex <= blacklist.MaxPrizeIndex {
 				continue
 			}
 			for _, ID := range blacklist.IDs {
 				if p.ID == ID {
 					found = true
+					break
 				}
+			}
+			if found {
+				break
 			}
 		}
 		if !found {
@@ -274,20 +311,24 @@ func _getWinners(prizes []Prize, prizeIndex int, availables []Participant, black
 		return []Participant{}, fmt.Errorf("no participants")
 	}
 
-	// Remove blacklists to update available participants
+	// Remove blacklists to update available participants.
 	updatedAvailables, err := getAvailParticipantsForPrize(prizeIndex, availables, blacklists)
 	if err != nil {
 		return []Participant{}, fmt.Errorf("failed to get available participants for prize index: %v\n", prizeIndex)
 	}
 
-	// Check number of available participants
+	// Check number of available participants.
 	m = len(updatedAvailables)
 	if m <= 0 {
 		return []Participant{}, fmt.Errorf("no participants for prize index: %v\n", prizeIndex)
 	}
 
+	for i, p := range updatedAvailables {
+		fmt.Printf("%v ID: %s, Name: %s\n", i, p.ID, p.Name)
+	}
+
 	// Set current prize num to m(number of participants),
-	// if number of participants is less than prize num:-)
+	// if number of participants is less than prize num:-).
 	if m < n {
 		n = m
 	}
@@ -301,7 +342,7 @@ func _getWinners(prizes []Prize, prizeIndex int, availables []Participant, black
 		updatedAvailables = append(updatedAvailables[0:idx], updatedAvailables[idx+1:]...)
 	}
 
-	// Verify if there are duplicated winners
+	// Verify if there are duplicated winners.
 	valid := verifyWinners(winners)
 	if !valid {
 		return []Participant{}, fmt.Errorf("invalid winners: %v", winners)
