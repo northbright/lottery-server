@@ -23,7 +23,7 @@ var (
 	winnerMap         = map[int][]Participant{}
 	cancelMap         = map[int]context.CancelFunc{}
 	ctxMap            = map[int]context.Context{}
-	//mutex             = &sync.Mutex{}
+	mutex             = &sync.Mutex{}
 )
 
 type Participant struct {
@@ -122,7 +122,7 @@ func parseAction(message []byte) (Action, error) {
 func processAction(c *Client, message []byte) {
 	fmt.Printf("processAction()..., message: %s\n", message)
 
-	mutex := &sync.Mutex{}
+	//mutex := &sync.Mutex{}
 
 	action, err := parseAction(message)
 
