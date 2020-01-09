@@ -47,9 +47,9 @@ type Config struct {
 }
 
 type Action struct {
-	Name          string `json:"name"`
-	PrizeIndex    int    `json:"prize_index"`
-	WinnerIndexes []int  `json:"winner_indexes"`
+	Name             string `json:"name"`
+	PrizeIndex       int    `json:"prize_index"`
+	OldWinnerIndexes []int  `json:"old_winner_indexes"`
 }
 
 type CommonResponse struct {
@@ -236,8 +236,21 @@ func start(ctx context.Context, c *Client, a Action, prizeNum int, availables []
 			// Modify action name when cancel() is called("stop" action received).
 			a.Name = "stop"
 
-			// Update winner map.
-			winnerMap[a.PrizeIndex] = winners
+			// If old winners and old winner indexes(want to re-lottery) are not empty.
+			// count of new winners = len(old winner indexes)
+			if len(winnerMap[a.PrizeIndex]) > 0 && len(a.OldWinnerIndexes) > 0 {
+				if len(winners) != len(a.OldWinnerIndexes) {
+					errMsg = fmt.Sprintf("len(action.OldWinnerIndexes) != len(winners)")
+					fmt.Println(errMsg)
+					return
+				}
+
+				for i, idx := range a.OldWinnerIndexes {
+					winnerMap[a.PrizeIndex][idx] = winners[i]
+				}
+			} else { // Old winners are empty, 1st lottery
+				winnerMap[a.PrizeIndex] = winners
+			}
 
 			// Remove winners from available participants.
 			availParticipants = removeWinners(availParticipants, winners)
@@ -300,8 +313,6 @@ func verifyWinners(winners []Participant) bool {
 func round(prizeNum int, availables []Participant, oldWinners []Participant) ([]Participant, []Participant, error) {
 	winners := []Participant{}
 
-	// Append older winners to available participants firstly.
-	// For the first time, oldWinners is empty.
 	availables = append(availables, oldWinners...)
 
 	if prizeNum <= 0 {
@@ -385,24 +396,24 @@ func removeBlacklist(origin []Participant, blacklist map[string]string) []Partic
 	return updated
 }
 
-func needLottery(oldWinners []Participant, winnerIndexes []int) (bool, error) {
+func needLottery(oldWinners []Participant, oldWinnerIndexes []int) (bool, error) {
 	nOldWinners := len(oldWinners)
 
 	if nOldWinners == 0 {
 		// Winner indexes are not empty(want to re-lottery) for 1st time lottery.
-		if len(winnerIndexes) != 0 {
+		if len(oldWinnerIndexes) != 0 {
 			return false, fmt.Errorf("1st time to lottery, invalid returned winner indexes")
 		}
 		// 1st time lottery.
 		return true, nil
 	} else {
 		// Older winners are not empty, it's re-lottery but with no winner indexes.
-		if len(winnerIndexes) == 0 {
+		if len(oldWinnerIndexes) == 0 {
 			return false, nil
 		}
 
 		// Check if winner indexes are valid.
-		for _, idx := range winnerIndexes {
+		for _, idx := range oldWinnerIndexes {
 			if idx < 0 || idx >= nOldWinners {
 				return false, fmt.Errorf("invalid returned winner index: %v\n", idx)
 			}
@@ -412,14 +423,14 @@ func needLottery(oldWinners []Participant, winnerIndexes []int) (bool, error) {
 	}
 }
 
-func returnWinners(origin []Participant, oldWinners []Participant, winnerIndexes []int) []Participant {
+func returnWinners(origin []Participant, oldWinners []Participant, oldWinnerIndexes []int) []Participant {
 	l := len(oldWinners)
 	if l <= 0 {
 		return origin
 	}
 
 	updated := origin
-	for _, idx := range winnerIndexes {
+	for _, idx := range oldWinnerIndexes {
 		if idx < 0 || idx >= l {
 			continue
 		}
@@ -433,8 +444,10 @@ func returnWinners(origin []Participant, oldWinners []Participant, winnerIndexes
 func getUpdatedAvailableParticipants(a Action, origin []Participant, oldWinners []Participant, blacklists []Blacklist) []Participant {
 
 	updatedAvailables := origin
-	if len(a.WinnerIndexes) > 0 {
-		updatedAvailables = returnWinners(updatedAvailables, oldWinners, a.WinnerIndexes)
+	if len(a.OldWinnerIndexes) > 0 {
+		updatedAvailables = returnWinners(updatedAvailables, oldWinners, a.OldWinnerIndexes)
+	} else {
+		updatedAvailables = append(updatedAvailables, oldWinners...)
 	}
 
 	prizeIndex := a.PrizeIndex
@@ -468,7 +481,7 @@ func getReady(action Action, prizes []Prize, availables []Participant, winnerMap
 		//fmt.Printf("after return winners, availParticipants: %v\n", availParticipants)
 	}
 
-	need, err := needLottery(oldWinners, action.WinnerIndexes)
+	need, err := needLottery(oldWinners, action.OldWinnerIndexes)
 	if err != nil {
 		return 0, []Participant{}, fmt.Errorf("needLottery() error: %v\n", err)
 	}
@@ -488,7 +501,13 @@ func getReady(action Action, prizes []Prize, availables []Participant, winnerMap
 		return 0, []Participant{}, fmt.Errorf("prize index error")
 	}
 
-	prizeNum := prizes[prizeIndex].Num
+	prizeNum := 0
+	if len(action.OldWinnerIndexes) > 0 {
+		prizeNum = len(action.OldWinnerIndexes)
+	} else {
+		prizeNum = prizes[prizeIndex].Num
+	}
+
 	if prizeNum <= 0 {
 		return 0, []Participant{}, fmt.Errorf("no prizes for prize index: %v\n", prizeIndex)
 	}
