@@ -248,32 +248,6 @@ func start(ctx context.Context, c *Client, a Action, prizeNum int, availables []
 		default:
 		}
 
-		/*
-			if winners, err = _getWinners(
-				config.Prizes,
-				a.PrizeIndex,
-				availParticipants,
-				config.Blacklists,
-			); err != nil {
-				errMsg = fmt.Sprintf("_getWinners() error: %v", err)
-				fmt.Println(errMsg)
-				return
-			}*/
-
-		/*
-			if winners, err = lottery(
-				a,
-				config.Prizes,
-				availParticipants,
-				oldWinners,
-				config.Blacklists,
-			); err != nil {
-				errMsg = fmt.Sprintf("_getWinners() error: %v", err)
-				fmt.Println(errMsg)
-				return
-			}
-		*/
-
 		winners, availables, err = round(prizeNum, availables, winners)
 		if err != nil {
 			errMsg = fmt.Sprintf("rount() error: %v", err)
@@ -310,100 +284,6 @@ func removeWinners(origin []Participant, winners []Participant) []Participant {
 
 	return updated
 }
-
-/*
-func getAvailParticipantsForPrize(prizeIndex int, origin []Participant, blacklists []Blacklist) ([]Participant, error) {
-	if len(origin) <= 0 {
-		return origin, nil
-	}
-
-	if len(blacklists) <= 0 {
-		return origin, nil
-	}
-
-	var updated []Participant
-	for _, p := range origin {
-		found := false
-		for _, blacklist := range blacklists {
-			// Blacklist is not for current prize index.
-			if prizeIndex <= blacklist.MaxPrizeIndex {
-				continue
-			}
-			for _, ID := range blacklist.IDs {
-				if p.ID == ID {
-					found = true
-					break
-				}
-			}
-			if found {
-				break
-			}
-		}
-		if !found {
-			updated = append(updated, p)
-		}
-	}
-	return updated, nil
-}
-*/
-
-/*
-func _getWinners(prizes []Prize, prizeIndex int, availables []Participant, blacklists []Blacklist) ([]Participant, error) {
-
-	prizesNum := len(prizes)
-	if prizesNum <= 0 {
-		return []Participant{}, fmt.Errorf("no prizes")
-	}
-
-	if prizeIndex < 0 || prizeIndex > prizesNum-1 {
-		return []Participant{}, fmt.Errorf("prize index error")
-	}
-
-	n := prizes[prizeIndex].Num
-	if n <= 0 {
-		return []Participant{}, fmt.Errorf("no prizes for prize index: %v\n", prizeIndex)
-	}
-
-	m := len(availables)
-	if m <= 0 {
-		return []Participant{}, fmt.Errorf("no participants")
-	}
-
-	// Remove blacklists to update available participants.
-	updatedAvailables, err := getAvailParticipantsForPrize(prizeIndex, availables, blacklists)
-	if err != nil {
-		return []Participant{}, fmt.Errorf("failed to get available participants for prize index: %v\n", prizeIndex)
-	}
-
-	// Check number of available participants.
-	m = len(updatedAvailables)
-	if m <= 0 {
-		return []Participant{}, fmt.Errorf("no participants for prize index: %v\n", prizeIndex)
-	}
-
-	// Set current prize num to m(number of participants),
-	// if number of participants is less than prize num:-).
-	if m < n {
-		n = m
-	}
-
-	var winners []Participant
-	for i := 0; i < n; i++ {
-		rand.Seed(time.Now().UnixNano())
-		idx := rand.Intn(len(updatedAvailables))
-		winners = append(winners, updatedAvailables[idx])
-		// Update participants
-		updatedAvailables = append(updatedAvailables[0:idx], updatedAvailables[idx+1:]...)
-	}
-
-	// Verify if there are duplicated winners.
-	valid := verifyWinners(winners)
-	if !valid {
-		return []Participant{}, fmt.Errorf("invalid winners: %v", winners)
-	}
-	return winners, nil
-}
-*/
 
 func verifyWinners(winners []Participant) bool {
 	m := map[string]Participant{}
@@ -562,32 +442,6 @@ func getUpdatedAvailableParticipants(a Action, origin []Participant, oldWinners 
 	updatedAvailables = removeBlacklist(updatedAvailables, blacklistIDs)
 	return updatedAvailables
 }
-
-/*
-func lottery(a Action, prizes []Prize, availables []Participant, oldWinners []Participant, blacklists []Blacklist) ([]Participant, error) {
-	if len(prizes) <= 0 {
-		return []Participant{}, fmt.Errorf("no prizes")
-	}
-
-	prizeIndex := a.PrizeIndex
-	if prizeIndex < 0 || prizeIndex >= len(prizes) {
-		return []Participant{}, fmt.Errorf("prize index error")
-	}
-
-	prizeNum := prizes[prizeIndex].Num
-	if prizeNum <= 0 {
-		return []Participant{}, fmt.Errorf("no prizes for prize index: %v\n", prizeIndex)
-	}
-
-	updatedAvailables := getUpdatedAvailableParticipants(a, availables, oldWinners, blacklists)
-
-	if len(updatedAvailables) <= 0 {
-		return []Participant{}, fmt.Errorf("no available participants")
-	}
-
-	return round(prizeNum, updatedAvailables)
-}
-*/
 
 func sendWinnersResponse(c *Client, a Action, winners []Participant, errMsg string) {
 	success := true
