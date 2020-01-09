@@ -21,9 +21,9 @@ var (
 	participants      []Participant
 	availParticipants []Participant
 	winnerMap         = map[int][]Participant{}
-	cancelMap         = map[int]context.CancelFunc{}
-	ctxMap            = map[int]context.Context{}
-	mutex             = &sync.Mutex{}
+	ctx               context.Context
+	cancel            context.CancelFunc = nil
+	mutex                                = &sync.Mutex{}
 )
 
 type Participant struct {
@@ -143,15 +143,12 @@ func processAction(c *Client, message []byte) {
 		}
 
 	case "start":
-		if _, ok := cancelMap[action.PrizeIndex]; ok {
-			errMsg := fmt.Sprintf("already running for prize: %v", action.PrizeIndex)
+		if cancel != nil {
+			errMsg := fmt.Sprintf("start() is already running")
 			sendWinnersResponse(c, action, []Participant{}, errMsg)
 			fmt.Println(errMsg)
 			break
 		}
-		ctx, cancel := context.WithCancel(context.Background())
-		cancelMap[action.PrizeIndex] = cancel
-		ctxMap[action.PrizeIndex] = ctx
 
 		prizeNum, updatedAvailables, err := getReady(
 			action,
@@ -168,23 +165,21 @@ func processAction(c *Client, message []byte) {
 			break
 		}
 
+		ctx, cancel = context.WithCancel(context.Background())
 		go start(ctx, c, action, prizeNum, updatedAvailables, mutex)
 
 	case "stop":
 		fmt.Printf("stop\n")
-		cancel, ok := cancelMap[action.PrizeIndex]
-		if !ok {
+		if cancel == nil {
 			errMsg := fmt.Sprintf("no start is running for prize: %v", action.PrizeIndex)
 			sendWinnersResponse(c, action, []Participant{}, errMsg)
 			break
 		}
 		cancel()
-		ctx, ok := ctxMap[action.PrizeIndex]
-		if ok {
-			<-ctx.Done()
-			delete(cancelMap, action.PrizeIndex)
-			fmt.Printf("stop <- ctx.Done()\n")
-		}
+		<-ctx.Done()
+		// Set cancel to nil
+		cancel = nil
+		fmt.Printf("stop <- ctx.Done()\n")
 	}
 }
 
