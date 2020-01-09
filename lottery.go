@@ -23,6 +23,7 @@ var (
 	winnerMap         = map[int][]Participant{}
 	cancelMap         = map[int]context.CancelFunc{}
 	ctxMap            = map[int]context.Context{}
+	//mutex             = &sync.Mutex{}
 )
 
 type Participant struct {
@@ -122,6 +123,7 @@ func processAction(c *Client, message []byte) {
 	fmt.Printf("processAction()..., message: %s\n", message)
 
 	mutex := &sync.Mutex{}
+
 	action, err := parseAction(message)
 
 	if err != nil {
@@ -284,10 +286,11 @@ func start(ctx context.Context, c *Client, a Action, prizeNum int, availables []
 			return
 		}
 
-		for i, p := range winners {
-			fmt.Printf("%v: ID: %v, Name: %v\n", i, p.ID, p.Name)
-		}
-
+		/*
+			for i, p := range winners {
+				fmt.Printf("%v: ID: %v, Name: %v\n", i, p.ID, p.Name)
+			}
+		*/
 		sendWinnersResponse(c, a, winners, errMsg)
 		time.Sleep(time.Millisecond * 100)
 	}
@@ -426,8 +429,6 @@ func round(prizeNum int, availables []Participant, oldWinners []Participant) ([]
 	// For the first time, oldWinners is empty.
 	availables = append(availables, oldWinners...)
 
-	fmt.Printf("in round(), availables: %v\n", availables)
-
 	if prizeNum <= 0 {
 		return winners, availables, fmt.Errorf("incorrect prize number")
 	}
@@ -443,7 +444,6 @@ func round(prizeNum int, availables []Participant, oldWinners []Participant) ([]
 		prizeNum = m
 	}
 
-	fmt.Printf("before: availbles: %v\n", availables)
 	for i := 0; i < prizeNum; i++ {
 		rand.Seed(time.Now().UnixNano())
 		idx := rand.Intn(len(availables))
@@ -451,7 +451,6 @@ func round(prizeNum int, availables []Participant, oldWinners []Participant) ([]
 		// Update participants
 		availables = append(availables[0:idx], availables[idx+1:]...)
 	}
-	fmt.Printf("after: availables: %v\n", availables)
 
 	valid := verifyWinners(winners)
 	if !valid {
