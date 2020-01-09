@@ -46,8 +46,9 @@ type Config struct {
 }
 
 type Action struct {
-	Name       string `json:"name"`
-	PrizeIndex int    `json:"prize_index"`
+	Name          string `json:"name"`
+	PrizeIndex    int    `json:"prize_index"`
+	WinnerIndexes []int  `json:"winner_indexes"`
 }
 
 type CommonResponse struct {
@@ -118,11 +119,11 @@ func parseAction(message []byte) (Action, error) {
 }
 
 func processAction(c *Client, message []byte) {
-	fmt.Printf("processAction() start, message: %s\n", message)
+	fmt.Printf("processAction()..., message: %s\n", message)
 
 	mutex := &sync.Mutex{}
-
 	action, err := parseAction(message)
+
 	if err != nil {
 		fmt.Printf("parseAction() error: %v\n", err)
 		return
@@ -141,17 +142,38 @@ func processAction(c *Client, message []byte) {
 
 	case "start":
 		if _, ok := cancelMap[action.PrizeIndex]; ok {
+			errMsg := fmt.Sprintf("already running for prize: %v", action.PrizeIndex)
+			sendWinnersResponse(c, action, []Participant{}, errMsg)
+			fmt.Println(errMsg)
 			break
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		cancelMap[action.PrizeIndex] = cancel
 		ctxMap[action.PrizeIndex] = ctx
-		go start(ctx, c, action, mutex)
+
+		prizeNum, updatedAvailables, err := getReady(
+			action,
+			config.Prizes,
+			availParticipants,
+			winnerMap,
+			config.Blacklists,
+		)
+
+		if err != nil {
+			errMsg := fmt.Sprintf("getReady() error: %v", err)
+			sendWinnersResponse(c, action, []Participant{}, errMsg)
+			fmt.Println(errMsg)
+			break
+		}
+
+		go start(ctx, c, action, prizeNum, updatedAvailables, mutex)
 
 	case "stop":
-		fmt.Printf("stop")
+		fmt.Printf("stop\n")
 		cancel, ok := cancelMap[action.PrizeIndex]
 		if !ok {
+			errMsg := fmt.Sprintf("no start is running for prize: %v", action.PrizeIndex)
+			sendWinnersResponse(c, action, []Participant{}, errMsg)
 			break
 		}
 		cancel()
@@ -159,6 +181,7 @@ func processAction(c *Client, message []byte) {
 		if ok {
 			<-ctx.Done()
 			delete(cancelMap, action.PrizeIndex)
+			fmt.Printf("stop <- ctx.Done()\n")
 		}
 	}
 }
@@ -196,7 +219,7 @@ func getWinners(c *Client, a Action, mutex *sync.Mutex) error {
 	return nil
 }
 
-func start(ctx context.Context, c *Client, a Action, mutex *sync.Mutex) {
+func start(ctx context.Context, c *Client, a Action, prizeNum int, availables []Participant, mutex *sync.Mutex) {
 	var (
 		err     error
 		errMsg  = ""
@@ -206,28 +229,8 @@ func start(ctx context.Context, c *Client, a Action, mutex *sync.Mutex) {
 	mutex.Lock()
 	defer func() {
 		mutex.Unlock()
-
-		commonRes := CommonResponse{Success: false, ErrMsg: errMsg, Action: a}
-		if errMsg == "" {
-			commonRes.Success = true
-		}
-
-		res := WinnersResponse{commonRes, winners}
-		if err = sendResponse(c, res); err != nil {
-			fmt.Printf("sendResponse() err: %v\n", err)
-		}
+		sendWinnersResponse(c, a, winners, errMsg)
 	}()
-
-	// Check if there're already winners for current prize,
-	// if so, re-get winners.
-	oldWinners, ok := winnerMap[a.PrizeIndex]
-	if ok {
-		// Return old winners to available participants.
-		availParticipants = append(availParticipants, winnerMap[a.PrizeIndex]...)
-		fmt.Printf("return old winners to availParticipants\n")
-		fmt.Printf("return winners: %v\n", oldWinners)
-		fmt.Printf("after return winners, availParticipants: %v\n", availParticipants)
-	}
 
 	for {
 		select {
@@ -260,24 +263,32 @@ func start(ctx context.Context, c *Client, a Action, mutex *sync.Mutex) {
 				return
 			}*/
 
-		if winners, err = lottery(
-			config.Prizes,
-			a.PrizeIndex,
-			availParticipants,
-			config.Blacklists,
-		); err != nil {
-			errMsg = fmt.Sprintf("_getWinners() error: %v", err)
+		/*
+			if winners, err = lottery(
+				a,
+				config.Prizes,
+				availParticipants,
+				oldWinners,
+				config.Blacklists,
+			); err != nil {
+				errMsg = fmt.Sprintf("_getWinners() error: %v", err)
+				fmt.Println(errMsg)
+				return
+			}
+		*/
+
+		winners, availables, err = round(prizeNum, availables, winners)
+		if err != nil {
+			errMsg = fmt.Sprintf("rount() error: %v", err)
 			fmt.Println(errMsg)
 			return
 		}
 
-		commonRes := CommonResponse{Success: true, ErrMsg: errMsg, Action: a}
-		res := WinnersResponse{commonRes, winners}
-
-		if err = sendResponse(c, res); err != nil {
-			fmt.Printf("sendResponse() err: %v\n", err)
+		for i, p := range winners {
+			fmt.Printf("%v: ID: %v, Name: %v\n", i, p.ID, p.Name)
 		}
 
+		sendWinnersResponse(c, a, winners, errMsg)
 		time.Sleep(time.Millisecond * 100)
 	}
 }
@@ -302,6 +313,7 @@ func removeWinners(origin []Participant, winners []Participant) []Participant {
 	return updated
 }
 
+/*
 func getAvailParticipantsForPrize(prizeIndex int, origin []Participant, blacklists []Blacklist) ([]Participant, error) {
 	if len(origin) <= 0 {
 		return origin, nil
@@ -335,7 +347,9 @@ func getAvailParticipantsForPrize(prizeIndex int, origin []Participant, blacklis
 	}
 	return updated, nil
 }
+*/
 
+/*
 func _getWinners(prizes []Prize, prizeIndex int, availables []Participant, blacklists []Blacklist) ([]Participant, error) {
 
 	prizesNum := len(prizes)
@@ -391,6 +405,7 @@ func _getWinners(prizes []Prize, prizeIndex int, availables []Participant, black
 	}
 	return winners, nil
 }
+*/
 
 func verifyWinners(winners []Participant) bool {
 	m := map[string]Participant{}
@@ -404,16 +419,22 @@ func verifyWinners(winners []Participant) bool {
 	return true
 }
 
-func round(prizeNum int, availables []Participant) ([]Participant, error) {
+func round(prizeNum int, availables []Participant, oldWinners []Participant) ([]Participant, []Participant, error) {
 	winners := []Participant{}
 
+	// Append older winners to available participants firstly.
+	// For the first time, oldWinners is empty.
+	availables = append(availables, oldWinners...)
+
+	fmt.Printf("in round(), availables: %v\n", availables)
+
 	if prizeNum <= 0 {
-		return winners, fmt.Errorf("incorrect prize number")
+		return winners, availables, fmt.Errorf("incorrect prize number")
 	}
 
 	m := len(availables)
 	if m <= 0 {
-		return winners, fmt.Errorf("no participants")
+		return winners, availables, fmt.Errorf("no participants")
 	}
 
 	// Set prize num to m(number of participants),
@@ -422,6 +443,7 @@ func round(prizeNum int, availables []Participant) ([]Participant, error) {
 		prizeNum = m
 	}
 
+	fmt.Printf("before: availbles: %v\n", availables)
 	for i := 0; i < prizeNum; i++ {
 		rand.Seed(time.Now().UnixNano())
 		idx := rand.Intn(len(availables))
@@ -429,8 +451,14 @@ func round(prizeNum int, availables []Participant) ([]Participant, error) {
 		// Update participants
 		availables = append(availables[0:idx], availables[idx+1:]...)
 	}
+	fmt.Printf("after: availables: %v\n", availables)
 
-	return winners, nil
+	valid := verifyWinners(winners)
+	if !valid {
+		return []Participant{}, availables, fmt.Errorf("invalid winners: %v", winners)
+	}
+
+	return winners, availables, nil
 }
 
 func getBlacklistIDs(blacklists []Blacklist, prizeIndex int) map[string]string {
@@ -483,11 +511,71 @@ func removeBlacklist(origin []Participant, blacklist map[string]string) []Partic
 	return updated
 }
 
-func lottery(prizes []Prize, prizeIndex int, availables []Participant, blacklists []Blacklist) ([]Participant, error) {
+func needLottery(oldWinners []Participant, winnerIndexes []int) (bool, error) {
+	nOldWinners := len(oldWinners)
+
+	if nOldWinners == 0 {
+		// Winner indexes are not empty(want to re-lottery) for 1st time lottery.
+		if len(winnerIndexes) != 0 {
+			return false, fmt.Errorf("1st time to lottery, invalid returned winner indexes")
+		}
+		// 1st time lottery.
+		return true, nil
+	} else {
+		// Older winners are not empty, it's re-lottery but with no winner indexes.
+		if len(winnerIndexes) == 0 {
+			return false, nil
+		}
+
+		// Check if winner indexes are valid.
+		for _, idx := range winnerIndexes {
+			if idx < 0 || idx >= nOldWinners {
+				return false, fmt.Errorf("invalid returned winner index: %v\n", idx)
+			}
+		}
+		// Re-lottery
+		return true, nil
+	}
+}
+
+func returnWinners(origin []Participant, oldWinners []Participant, winnerIndexes []int) []Participant {
+	l := len(oldWinners)
+	if l <= 0 {
+		return origin
+	}
+
+	updated := origin
+	for _, idx := range winnerIndexes {
+		if idx < 0 || idx >= l {
+			continue
+		}
+
+		updated = append(updated, oldWinners[idx])
+		fmt.Printf("return winners: %v\n", oldWinners[idx])
+	}
+	return updated
+}
+
+func getUpdatedAvailableParticipants(a Action, origin []Participant, oldWinners []Participant, blacklists []Blacklist) []Participant {
+
+	updatedAvailables := origin
+	if len(a.WinnerIndexes) > 0 {
+		updatedAvailables = returnWinners(updatedAvailables, oldWinners, a.WinnerIndexes)
+	}
+
+	prizeIndex := a.PrizeIndex
+	blacklistIDs := getBlacklistIDs(blacklists, prizeIndex)
+	updatedAvailables = removeBlacklist(updatedAvailables, blacklistIDs)
+	return updatedAvailables
+}
+
+/*
+func lottery(a Action, prizes []Prize, availables []Participant, oldWinners []Participant, blacklists []Blacklist) ([]Participant, error) {
 	if len(prizes) <= 0 {
 		return []Participant{}, fmt.Errorf("no prizes")
 	}
 
+	prizeIndex := a.PrizeIndex
 	if prizeIndex < 0 || prizeIndex >= len(prizes) {
 		return []Participant{}, fmt.Errorf("prize index error")
 	}
@@ -497,12 +585,71 @@ func lottery(prizes []Prize, prizeIndex int, availables []Participant, blacklist
 		return []Participant{}, fmt.Errorf("no prizes for prize index: %v\n", prizeIndex)
 	}
 
-	blacklistIDs := getBlacklistIDs(blacklists, prizeIndex)
-	updatedAvailables := removeBlacklist(availables, blacklistIDs)
+	updatedAvailables := getUpdatedAvailableParticipants(a, availables, oldWinners, blacklists)
 
 	if len(updatedAvailables) <= 0 {
 		return []Participant{}, fmt.Errorf("no available participants")
 	}
 
 	return round(prizeNum, updatedAvailables)
+}
+*/
+
+func sendWinnersResponse(c *Client, a Action, winners []Participant, errMsg string) {
+	success := true
+	if errMsg != "" {
+		success = false
+	}
+
+	commonRes := CommonResponse{Success: success, ErrMsg: errMsg, Action: a}
+	res := WinnersResponse{CommonResponse: commonRes, Winners: winners}
+	sendResponse(c, res)
+}
+
+func getReady(action Action, prizes []Prize, availables []Participant, winnerMap map[int][]Participant, blacklists []Blacklist) (int, []Participant, error) {
+	// Check if there're already winners for current prize,
+	// if so, re-get winners.
+	oldWinners := []Participant{}
+	if _, ok := winnerMap[action.PrizeIndex]; ok {
+		oldWinners = winnerMap[action.PrizeIndex]
+
+		// Return old winners to available participants.
+		//availParticipants = append(availParticipants, winnerMap[a.PrizeIndex]...)
+		//fmt.Printf("return old winners to availParticipants\n")
+		//fmt.Printf("return winners: %v\n", oldWinners)
+		//fmt.Printf("after return winners, availParticipants: %v\n", availParticipants)
+	}
+
+	need, err := needLottery(oldWinners, action.WinnerIndexes)
+	if err != nil {
+		return 0, []Participant{}, fmt.Errorf("needLottery() error: %v\n", err)
+	}
+
+	if !need {
+		return 0, []Participant{}, fmt.Errorf("no need")
+	}
+
+	fmt.Printf("need = true\n")
+
+	if len(prizes) <= 0 {
+		return 0, []Participant{}, fmt.Errorf("no prizes")
+	}
+
+	prizeIndex := action.PrizeIndex
+	if prizeIndex < 0 || prizeIndex >= len(prizes) {
+		return 0, []Participant{}, fmt.Errorf("prize index error")
+	}
+
+	prizeNum := prizes[prizeIndex].Num
+	if prizeNum <= 0 {
+		return 0, []Participant{}, fmt.Errorf("no prizes for prize index: %v\n", prizeIndex)
+	}
+
+	updatedAvailables := getUpdatedAvailableParticipants(action, availables, oldWinners, blacklists)
+
+	if len(updatedAvailables) <= 0 {
+		return 0, []Participant{}, fmt.Errorf("no available participants")
+	}
+
+	return prizeNum, updatedAvailables, nil
 }
