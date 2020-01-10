@@ -298,6 +298,9 @@ func start(ctx context.Context, c *Client, a Action, prizeNum int, availables []
 			availParticipants = removeWinners(availParticipants, winners)
 
 			fmt.Printf("after remove winners, availParticipants: %v\n", availParticipants)
+
+			// log winners response
+			logWinnerResponse(a, winners, errMsg)
 			return
 		default:
 		}
@@ -502,15 +505,33 @@ func getAvailableParticipantsAfterRemovedBlacklist(prizeIndex int, origin []Part
 	return updatedAvailables
 }
 
-func sendWinnersResponse(c *Client, a Action, winners []Participant, errMsg string) {
+func genWinnersResponse(a Action, winners []Participant, errMsg string) WinnersResponse {
 	success := true
 	if errMsg != "" {
 		success = false
 	}
 
 	commonRes := CommonResponse{Success: success, ErrMsg: errMsg, Action: a}
-	res := WinnersResponse{CommonResponse: commonRes, Winners: winners}
+	return WinnersResponse{CommonResponse: commonRes, Winners: winners}
+}
+
+func sendWinnersResponse(c *Client, a Action, winners []Participant, errMsg string) {
+	/*
+		success := true
+		if errMsg != "" {
+			success = false
+		}
+
+		commonRes := CommonResponse{Success: success, ErrMsg: errMsg, Action: a}
+		res := WinnersResponse{CommonResponse: commonRes, Winners: winners}
+	*/
+	res := genWinnersResponse(a, winners, errMsg)
 	sendResponse(c, res)
+}
+
+func logWinnerResponse(a Action, winners []Participant, errMsg string) error {
+	res := genWinnersResponse(a, winners, errMsg)
+	return logResponse(res)
 }
 
 /*

@@ -1,29 +1,30 @@
 package main
 
 import (
-	"os"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
 	"path"
+	"time"
 
 	"github.com/northbright/pathhelper"
 )
 
-var (
-	logFile = `log.txt`
-)
-
-func writeLog(buf []byte) error {
+func getLogFileName() string {
+	t := time.Now()
+	fileName := fmt.Sprintf("%02d-%02d-%02d.txt", t.Hour(), t.Minute(), t.Second())
 	currentDir, _ := pathhelper.GetCurrentExecDir()
-	p := path.Join(currentDir, logFile)
+	p := path.Join(currentDir, fileName)
+	return p
+}
 
-	f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+func logResponse(res interface{}) error {
+	p := getLogFileName()
+
+	buf, err := json.Marshal(res)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 
-	if _, err = f.Write(buf); err != nil {
-		return err
-	}
-
-	return nil
+	return ioutil.WriteFile(p, buf, 0644)
 }
