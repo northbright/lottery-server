@@ -196,8 +196,8 @@ func getPrizes(c *Client, a Action) error {
 }
 
 func getWinners(c *Client, a Action, mutex *sync.Mutex) error {
-	mutex.Lock()
-	defer mutex.Unlock()
+	//mutex.Lock()
+	//defer mutex.Unlock()
 
 	commonRes := CommonResponse{Success: true, ErrMsg: "", Action: a}
 
