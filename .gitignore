@@ -2,6 +2,7 @@
 *
 # Unignore all sub dirs
 !*/
+dist/
 !.gitignore
 !LICENSE
 !*.md
