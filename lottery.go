@@ -27,8 +27,8 @@ var (
 )
 
 type Participant struct {
-	ID   string
-	Name string
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type Prize struct {
