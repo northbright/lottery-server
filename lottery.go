@@ -32,8 +32,9 @@ type Participant struct {
 }
 
 type Prize struct {
-	Name string `json:"name"`
-	Num  int    `json:"num"`
+	Name    string `json:"name"`
+	Num     int    `json:"num"`
+	Content string `json:"content"`
 }
 
 type Blacklist struct {
