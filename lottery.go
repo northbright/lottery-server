@@ -249,20 +249,18 @@ func start(ctx context.Context, c *Client, a Action, prizeNum int, availables []
 			a.Name = "stop"
 
 			// If old winners and old winner indexes(want to re-lottery) are not empty.
-			// count of new winners = len(old winner indexes)
+			// Update winners for relottery
 			if len(winnerMap[a.PrizeIndex]) > 0 && len(a.OldWinnerIndexes) > 0 {
-				if len(winners) != len(a.OldWinnerIndexes) {
-					errMsg = fmt.Sprintf("len(action.OldWinnerIndexes) != len(winners)")
+				oldWinners := winnerMap[a.PrizeIndex]
+
+				if winners, err = updateRelotteryWinners(oldWinners, a.OldWinnerIndexes, winners); err != nil {
+					errMsg = fmt.Sprintf("relottery error: %v", err)
 					fmt.Println(errMsg)
 					return
 				}
-
-				for i, idx := range a.OldWinnerIndexes {
-					winnerMap[a.PrizeIndex][idx] = winners[i]
-				}
-			} else { // Old winners are empty, 1st lottery
-				winnerMap[a.PrizeIndex] = winners
 			}
+
+			winnerMap[a.PrizeIndex] = winners
 
 			fmt.Printf("winners: %v\n", winners)
 			fmt.Printf("before remove winners, availParticipants: %v\n", availParticipants)
@@ -290,9 +288,38 @@ func start(ctx context.Context, c *Client, a Action, prizeNum int, availables []
 				fmt.Printf("%v: ID: %v, Name: %v\n", i, p.ID, p.Name)
 			}
 		*/
-		sendWinnersResponse(c, a, winners, errMsg)
+
+		// Update winners for relottery
+		tmpWinners := winners
+		if len(winnerMap[a.PrizeIndex]) > 0 && len(a.OldWinnerIndexes) > 0 {
+			oldWinners := winnerMap[a.PrizeIndex]
+
+			if tmpWinners, err = updateRelotteryWinners(oldWinners, a.OldWinnerIndexes, winners); err != nil {
+				errMsg = fmt.Sprintf("relottery error: %v", err)
+				fmt.Println(errMsg)
+				return
+			}
+		}
+
+		sendWinnersResponse(c, a, tmpWinners, errMsg)
 		time.Sleep(time.Millisecond * 100)
 	}
+}
+
+// updateRelotteryWinners updates the winners which need to relottery previous prize.
+// It replaces old winners (specified in old winner indexes) with new winners.
+func updateRelotteryWinners(oldWinners []Participant, relotteryOldWinnerIndexes []int, relotteryWinners []Participant) ([]Participant, error) {
+	if len(relotteryWinners) != len(relotteryOldWinnerIndexes) {
+		return []Participant{}, fmt.Errorf("len(relottery winners) != len(relottery old winner indexes)")
+	}
+
+	// Update winners with relottery winners
+	for i, idx := range relotteryOldWinnerIndexes {
+		oldWinners[idx] = relotteryWinners[i]
+	}
+
+	// return updated winners
+	return oldWinners, nil
 }
 
 func removeWinners(origin []Participant, winners []Participant) []Participant {
