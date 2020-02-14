@@ -24,6 +24,7 @@ var (
 	ctx               context.Context
 	cancel            context.CancelFunc = nil
 	mutex                                = &sync.Mutex{}
+	chDone                               = make(chan struct{})
 )
 
 type Participant struct {
@@ -236,8 +237,9 @@ func start(ctx context.Context, c *Client, a Action, prizeNum int, availables []
 	)
 
 	mutex.Lock()
+	defer mutex.Unlock()
+
 	defer func() {
-		mutex.Unlock()
 		sendWinnersResponse(c, a, winners, errMsg)
 	}()
 
